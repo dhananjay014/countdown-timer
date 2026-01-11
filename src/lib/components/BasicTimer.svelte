@@ -111,6 +111,12 @@
     if (e.key === 'Escape') cancelEdit();
   }
 
+  function handleVisibilityChange() {
+    if (document.visibilityState === 'visible' && timer?.status === 'running') {
+      timers.tick(timerId);
+    }
+  }
+
   // Quick set buttons
   function quickSet(mins: number) {
     timers.setDuration(timerId, 0, mins, 0);
@@ -119,16 +125,19 @@
   onMount(() => {
     // Resume running timer if it was running
     if (timer?.status === 'running') {
+      timers.tick(timerId);
       interval = setInterval(() => {
         timers.tick(timerId);
       }, 1000);
     }
+    document.addEventListener('visibilitychange', handleVisibilityChange);
   });
 
   onDestroy(() => {
     if (interval) {
       clearInterval(interval);
     }
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
   });
 </script>
 

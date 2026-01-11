@@ -10,6 +10,7 @@ export interface Timer {
   seconds: number;
   totalSeconds: number;
   remainingTime: number;
+  endTime: number | null;
   status: TimerStatus;
   label: string;
 }
@@ -19,17 +20,43 @@ const STORAGE_KEY = 'countdown_timers';
 // Check if we're in browser environment
 const isBrowser = typeof window !== 'undefined';
 
+function getRemainingSeconds(endTime: number, now: number = Date.now()): number {
+  return Math.max(0, Math.ceil((endTime - now) / 1000));
+}
+
+function normalizeLoadedTimer(timer: Timer): Timer {
+  if (timer.status !== 'running') {
+    return {
+      ...timer,
+      endTime: timer.endTime ?? null,
+    };
+  }
+
+  const endTime = typeof timer.endTime === 'number' ? timer.endTime : null;
+  if (!endTime) {
+    return {
+      ...timer,
+      status: 'paused',
+      endTime: null,
+    };
+  }
+
+  const remainingTime = getRemainingSeconds(endTime);
+  return {
+    ...timer,
+    remainingTime,
+    status: remainingTime === 0 ? 'completed' : 'running',
+    endTime: remainingTime === 0 ? null : endTime,
+  };
+}
+
 function loadFromStorage(): Timer[] {
   if (!isBrowser) return [];
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       const timers = JSON.parse(saved) as Timer[];
-      // Reset running timers to paused on load (intervals don't persist)
-      return timers.map(t => ({
-        ...t,
-        status: t.status === 'running' ? 'paused' : t.status
-      }));
+      return timers.map(normalizeLoadedTimer);
     }
   } catch (e) {
     console.error('Failed to load timers from storage:', e);
@@ -78,6 +105,7 @@ function createTimerStore() {
         seconds,
         totalSeconds,
         remainingTime: totalSeconds,
+        endTime: null,
         status: 'idle',
         label: options.label ?? '',
       };
@@ -106,20 +134,37 @@ function createTimerStore() {
           seconds,
           totalSeconds,
           remainingTime: totalSeconds,
+          endTime: null,
           status: 'idle'
         } : t)
       );
     },
 
     start: (id: string) => {
+      const now = Date.now();
       update(timers =>
-        timers.map(t => t.id === id && t.remainingTime > 0 ? { ...t, status: 'running' } : t)
+        timers.map(t =>
+          t.id === id && t.remainingTime > 0
+            ? { ...t, status: 'running', endTime: now + (t.remainingTime * 1000) }
+            : t
+        )
       );
     },
 
     pause: (id: string) => {
+      const now = Date.now();
       update(timers =>
-        timers.map(t => t.id === id ? { ...t, status: 'paused' } : t)
+        timers.map(t => {
+          if (t.id !== id) return t;
+          const endTime = t.endTime ?? (now + (t.remainingTime * 1000));
+          const remainingTime = getRemainingSeconds(endTime, now);
+          return {
+            ...t,
+            remainingTime,
+            status: 'paused',
+            endTime: null,
+          };
+        })
       );
     },
 
@@ -128,20 +173,32 @@ function createTimerStore() {
         timers.map(t => t.id === id ? {
           ...t,
           remainingTime: t.totalSeconds,
-          status: 'idle'
+          status: 'idle',
+          endTime: null,
         } : t)
       );
     },
 
     tick: (id: string) => {
+      const now = Date.now();
       update(timers =>
         timers.map(t => {
           if (t.id !== id || t.status !== 'running') return t;
-          const newRemaining = Math.max(0, t.remainingTime - 1);
+          const endTime = t.endTime ?? (now + (t.remainingTime * 1000));
+          const remainingTime = getRemainingSeconds(endTime, now);
+          if (remainingTime === 0) {
+            return {
+              ...t,
+              remainingTime,
+              status: 'completed',
+              endTime: null,
+            };
+          }
           return {
             ...t,
-            remainingTime: newRemaining,
-            status: newRemaining === 0 ? 'completed' : 'running'
+            remainingTime,
+            status: 'running',
+            endTime,
           };
         })
       );
