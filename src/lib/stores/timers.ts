@@ -74,7 +74,10 @@ function saveToStorage(timers: Timer[]): void {
 }
 
 function generateId(): string {
-  return crypto.randomUUID();
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `timer-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 function createTimerStore() {
